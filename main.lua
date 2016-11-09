@@ -177,7 +177,6 @@ if cuda == 1 then
 	VAE_KLDCriterion:cuda()
 	DiscreteKLDCriterion:cuda()
 
-
 	MC_replicate:cuda()
 	EntropyCriterion:cuda()
 	Likelihood:cuda()
@@ -232,12 +231,12 @@ function feval(params)
 	local wLoss = VAE_KLDCriterion:forward( mean_w, logVar_w)
 	local gradW	= VAE_KLDCriterion:backward( mean_w, logVar_w)
 
-	-- 4.) KL( q(z) || P(z) )  : P(z) can be shaped with known label
+	-- 4.) KL( q(z) || P(z) ) 
 	local zLoss = DiscreteKLDCriterion:forward(qZ)
 	gradQz:add( DiscreteKLDCriterion:backward(qZ) )
 
 
-	-- 5.)  CV = H(Z|X, W) = E_q(x,w)E_p(z|x,w)[ - log P(z|x,w)]
+	-- 5.)  CV = H(Z|X, W) = E_q(x,w) [ E_p(z|x,w)[ - log P(z|x,w)] ]
 	local lh = Likelihood:forward({x_sample, mean_k, logVar_k})
 	local CV = EntropyCriterion:forward(lh)
 	local gradLh = EntropyCriterion:backward(lh)

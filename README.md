@@ -19,6 +19,11 @@ To run a spiral experiment,
 
 	./run.sh spiral 
 
+To visualise spiral experiment (can be used while training)
+	cd plot
+	python plot_latent.py
+	python plot_recon.py
+
 To turn off CV regularisation term (set alpha)
 
 set flag 
@@ -43,4 +48,9 @@ To run quick MNIST on fully-connected network
 
 	./run.sh mnist_fc
 
+# Code reading guide
+
+The neural network components are constructed with nngraph in the folder 'models'.
+The network's components are put together in the main.lua file at line 126.
+During optimisation, the GMVAE objectives (5 contributing terms) are calculated from line 202 until 250 in main.lua.
 
