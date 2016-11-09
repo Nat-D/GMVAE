@@ -9,24 +9,38 @@ We study a variant of the variational autoencoder model with a Gaussian mixture 
 # Requirements
 Luarocks packages:
 - mnist ( torch-rocks install https://raw.github.com/andresy/mnist/master/rocks/mnist-scm-1.rockspec )
+
 Python packages:
 - torchfile (pip install torchfile)
 
 # Instructions
 
 To run a spiral experiment,
+
 ./run.sh spiral 
+
 To turn off CV regularisation term (set alpha)
+
 set flag 
+
 	\- cvWeight 0.0
+
 To turn off z-prior term (set eta)
+
 	\- zPriorWeight 0.0
 
 To run MNIST
+
 ./run.sh mnist
+
 To use GPU 
+
 set flag
+
 	\- gpu 1
 
 To run quick MNIST on fully-connected network
+
 ./run.sh mnist_fc
+
+
