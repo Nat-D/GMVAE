@@ -17,30 +17,30 @@ Python packages:
 
 To run a spiral experiment,
 
-./run.sh spiral 
+	./run.sh spiral 
 
 To turn off CV regularisation term (set alpha)
 
 set flag 
 
-	\- cvWeight 0.0
+	./run.sh spiral -cvWeight 0.0
 
 To turn off z-prior term (set eta)
 
-	\- zPriorWeight 0.0
+	./run.sh spiral -zPriorWeight 0.0
 
 To run MNIST
 
-./run.sh mnist
+	./run.sh mnist
 
 To use GPU 
 
 set flag
 
-	\- gpu 1
+	./run.sh mnist - gpu 1
 
 To run quick MNIST on fully-connected network
 
-./run.sh mnist_fc
+	./run.sh mnist_fc
 
 
