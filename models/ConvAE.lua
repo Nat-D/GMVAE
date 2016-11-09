@@ -8,7 +8,7 @@ owidth  = floor((width  + 2*padW - kW) / dW + 1)
 oheight = floor((height + 2*padH - kH) / dH + 1)
 ]]--
 
-require 'Probe'
+--require 'Probe'
 function Model:CreateRecogniser(input_size, hidden_size, x_size, w_size, number_of_mixtures)
   local height = input_size[1] -- 28x28 for mnist
   local width = input_size[2]

@@ -24,7 +24,7 @@ cmd:option('-ACC', 0, 'Report Clustering accuracy')
 cmd:option('-visualGen', 0, 'Visualise the generation samples at every [input] epochs (0 to disable)')
 cmd:option('-continuous', 0, 'Data is continous use Gaussian Criterion (1), Data is discrete use BCE Criterion (0)')
 cmd:option('-inputDimension', 1, 'Dimension of the input vector into the network (e.g. 2 for height x width)')
-cmd:option('-network', 'fc', 'Network architecture use: fc (FullyConnected)/ conv (Convolutional AE)/ hconv (half convolution)/ resnet (residual network)')
+cmd:option('-network', 'fc', 'Network architecture use: fc (FullyConnected)/ conv (Convolutional AE) .. ')
 cmd:option('-nChannels', 1, 'Number of Input channels')
 cmd:option('-nFilters', 16, 'Number of Convolutional Filters in first layer')
 cmd:option('-nMC', 1, 'Number of monte-carlo sample')
@@ -42,6 +42,9 @@ torch.setdefaulttensortype('torch.FloatTensor')
 if not paths.dirp('experiments') then
 	paths.mkdir('experiments')
 end
+if not paths.dirp('save') then
+	paths.mkdir('save')
+end
 paths.mkdir(paths.concat('experiments', opt._id))
 -- Save option for reference
 local file = torch.DiskFile(paths.concat('experiments', opt._id, 'opts.json'),'w')
@@ -50,7 +53,7 @@ file:close()
 
 -- Preparing Data --
 local dataSet = opt.dataSet-- 'spiral'
-local data, label_data, width, height, label_key_shuffled
+local data, label_data, width, height
 local y_size
 
 if dataSet == 'mnist' then
@@ -64,9 +67,18 @@ if dataSet == 'mnist' then
 
 	width = data:size(3)
 	height = data:size(2)
-	y_size = {data:size(2), data:size(3)}
-	data = data:resize(data:size(1), 1, data:size(2), data:size(3))
-	test_data = test_data:resize(test_data:size(1), 1, test_data:size(2), test_data:size(3))
+	if opt.inputDimension == 1 then
+		data = data:resize(data:size(1), data:size(2)*data:size(3)) -- resize into 1D
+		test_data = test_data:resize(test_data:size(1), test_data:size(2)*test_data:size(3))
+		y_size = data:size(2)
+	else
+		y_size = {data:size(2), data:size(3)}
+		data = data:resize(data:size(1), 1, data:size(2), data:size(3))
+		test_data = test_data:resize(test_data:size(1), 1, test_data:size(2), test_data:size(3))
+	end
+	-- prepare label for measuring training accuracy
+	label_data = mnist.traindataset().label:float()
+	label_data:add(1) -- from [0,9] -> [1, 10]
 
 elseif dataSet == 'spiral' then
 
@@ -121,13 +133,13 @@ local q_x = zxw - nn.SelectTable(2)
 local q_w = zxw - nn.SelectTable(3)
 local x_sample = {q_x, noise1} - GaussianSampler(opt.nMC, x_size)
 local w_sample = {q_w, noise2} - GaussianSampler(opt.nMC, w_size)
-local y_recon  = x_sample
-								- y_generator
-local p_xz  = w_sample
-								- prior_generator
+local y_recon  = x_sample - y_generator
+local p_xz  = w_sample - prior_generator
 local GMVAE = nn.gModule({input, noise1, noise2},{q_z, q_x, q_w, p_xz, y_recon, x_sample})
---
+
+-- Additional layers to facilitate more than one monte-carlo sample
 local MC_replicate = nn.Replicate(opt.nMC)
+-- Layers for calculating Likelihood used in calculating CV
 local Likelihood = Likelihood(z_size, x_size, opt.nMC)
 --
 
@@ -221,8 +233,7 @@ function feval(params)
 	local gradW	= VAE_KLDCriterion:backward( mean_w, logVar_w)
 
 	-- 4.) KL( q(z) || P(z) )  : P(z) can be shaped with known label
-	local zLoss = 0
-	zLoss = DiscreteKLDCriterion:forward(qZ)
+	local zLoss = DiscreteKLDCriterion:forward(qZ)
 	gradQz:add( DiscreteKLDCriterion:backward(qZ) )
 
 
@@ -249,7 +260,7 @@ function feval(params)
 	GMVAE:backward({y, n1, n2}, gradLoss)
 
 	local loss = reconLoss + xLoss + wLoss + zLoss
-	return {loss,CV}, gradParams
+	return {loss, CV}, gradParams
 end
 
 
@@ -356,8 +367,6 @@ for epoch = 1, max_epoch do
 		local true_label_all = label_data:index(1, indices_all)
 		local training_score = AAE_Clustering_Criteria(labels, true_label_all) --ACC(labels, true_label_all)
 		print('Training ACC score: '.. training_score)
-		local class_score = Classification_Score(labels, true_label_all)--labels:eq(true_label_all):sum()/N
-		print('Training Classification score: '.. class_score )
 
 		GMVAE:evaluate()
 		-- split batchSize for cudnn --
@@ -370,24 +379,16 @@ for epoch = 1, max_epoch do
 			predict_label_cpu[{{ 1000*(t-1) + 1, 1000*t },{}}] = predict_label:float()
 		end
 		local testing_acc_score = AAE_Clustering_Criteria(predict_label_cpu, test_data_label)
-		local testing_class_score = Classification_Score(predict_label_cpu, test_data_label)
 		-- Testing ACC score
 		print('Testing ACC score: '.. testing_acc_score)
-		print('Testing Classification score: '..testing_class_score)
 
 		ACC_evaluation[epoch] = testing_acc_score
-		Class_evaluation[epoch] = testing_class_score
 		Train_ACC_evaluation[epoch] = training_score
-		Train_Class_evaluation[epoch] = class_score
 		torch.save(paths.concat('experiments', opt._id, 'acc_score.t7'), ACC_evaluation)
-		torch.save(paths.concat('experiments', opt._id, 'class_score.t7'), Class_evaluation)
 		torch.save(paths.concat('experiments', opt._id, 'train_ACC_score.t7'), Train_ACC_evaluation)
-		torch.save(paths.concat('experiments', opt._id, 'train_class_score.t7'), Train_Class_evaluation)
 		gnuplot.pngfigure(paths.concat('experiments', opt._id, 'Scores.png'))
 		gnuplot.plot({'Unsupervised Clustering ACC', torch.linspace(1,epoch,epoch), ACC_evaluation[{{1,epoch}}] ,'-'},
-					 {'Classification Accuracy', torch.linspace(1,epoch,epoch), Class_evaluation[{{1,epoch}}], '-' },
-					 {'Training ACC', torch.linspace(1,epoch,epoch), Train_ACC_evaluation[{{1,epoch}}], '-' },
-					 {'Training Classification Accuracy', torch.linspace(1,epoch,epoch), Train_Class_evaluation[{{1,epoch}}], '-' }
+					 {'Training ACC', torch.linspace(1,epoch,epoch), Train_ACC_evaluation[{{1,epoch}}], '-' }
 					 )
 		gnuplot.xlabel('Epoch')
 		gnuplot.ylabel('Scores')
