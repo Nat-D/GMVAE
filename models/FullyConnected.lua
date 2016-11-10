@@ -1,13 +1,15 @@
 local Model = {}
 
+
 function Model:CreateRecogniser(input_size, hidden_size, x_size, w_size, number_of_mixtures)
 	local input = - nn.Identity()
 	local hidden = input
 					- nn.Linear(input_size, hidden_size)
+					- nn.BatchNormalization(hidden_size)
 					- nn.ReLU(true)
 					- nn.Linear(hidden_size, hidden_size)
+					- nn.BatchNormalization(hidden_size)
 					- nn.ReLU(true)
-
 
 	local q_z = hidden
 				- nn.Linear(hidden_size, number_of_mixtures)
