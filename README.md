@@ -57,4 +57,11 @@ The network's components are put together in the main.lua file at line 126.
 
 During optimisation, the GMVAE objectives (5 contributing terms) are calculated from line 202 until 250 in main.lua.
 
+# Acknowledgements
+
+I would like to thanks the following, whose github's repos were used as inital templates for implementing this idea. 
+1. Rui Shu https://github.com/RuiShu/cvae
+2. Joost van Amersfoort https://github.com/y0ast/VAE-Torch
+3. Kai Arulkumaran https://github.com/Kaixhin/Autoencoders
+
 
