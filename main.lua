@@ -23,8 +23,6 @@ cmd:option('-zPriorWeight', 1, 'Weight on the z prior term')
 cmd:option('-ACC', 1, 'Report Clustering accuracy')
 cmd:option('-visualGen', 1, 'Visualise the generation samples at every [input] epochs (0 to disable)')
 cmd:option('-continuous', 0, 'Data is continous use Gaussian Criterion (1), Data is discrete use BCE Criterion (0)')
-cmd:option('-labelRatio', 0, 'Ratio between supervised signal and total data')
-cmd:option('-inputDimension', 1, 'Dimension of the input vector into the network (e.g. 2 for height x width)')
 cmd:option('-network', 'conv', 'Network architecture use: fc (FullyConnected)/ conv (Convolutional AE)/ hconv (half convolution)/ resnet (residual network)')
 cmd:option('-nChannels', 3, 'Number of Input channels')
 cmd:option('-nFilters', 64, 'Number of Convolutional Filters in first layer')
@@ -77,9 +75,7 @@ test_data_label = svhn.testData.labels[{{1,opt.numTest}}]:float()
 width = 32
 height = 32
 y_size = {32,32}
---width = 96
---height = 96
---y_size = {96,96}
+
 local N_all = data_all:size(1)
 
 
@@ -133,7 +129,6 @@ local MC_replicate = nn.Replicate(opt.nMC)
 
 require 'criteria/GaussianCriterion'
 require 'criteria/VAE_KLDCriterion'
-require 'criteria/DiscreteKLDCriterion_with_Target'
 require 'criteria/EntropyCriterion'
 require 'criteria/DiscreteKLDCriterion'
 -- Criteria --
