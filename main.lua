@@ -33,6 +33,7 @@ cmd:option('-cvWeight', 1, 'Weight of the information theoretic cost term')
 cmd:option('-_id', '', 'Experiment Path')
 cmd:option('-saveModel',0, 'Save model in experiments folder after finish training')
 cmd:option('-reportLowerBound', 1, 'Save lowerbound while training')
+cmd:option('-lambda', 0.5 , 'Free bits threshold')
 local opt = cmd:parse(arg)
 
 torch.manualSeed(opt.seed)
@@ -237,8 +238,12 @@ function feval(params)
   -- 4.)  CV = H(Z|X, W) = E_q(x,w) [ E_p(z|x,w)[ - log P(z|x,w)] ]
 	-- new inference model = E[KL(P(z|x,w)||P(z))] = E[ E[logP(z|x,w)] - E[logP(z)] ] = - CV + constant
   local CV = EntropyCriterion:forward(qZ)
-  gradQz:add(EntropyCriterion:backward(qZ) ):mul(-1)
-	local constant = - torch.log(1.0/z_size)
+	local zLoss = - CV - ( (math.log(1.0/z_size)) *batch_size)
+	if zLoss/batch_size > opt.lambda then
+		gradQz:add(EntropyCriterion:backward(qZ) ):mul(-1)
+	end
+
+
 
 
   -- Put all the gradient of the cost into a table
@@ -253,7 +258,7 @@ function feval(params)
 
 
 
-  local loss = reconLoss + xLoss + wLoss - CV + constant
+  local loss = reconLoss + xLoss + wLoss + zLoss
   return {loss, CV}, gradParams
 end
 
