@@ -1,7 +1,8 @@
-TODO: Update the code with version 2, with new inference model. 
+## This branch is for version 1 of the paper. For updated version checkout branch version2 and svhn
+
 
 # Code for "Deep Unsupervised Clustering with Gaussian Mixture Variational Autoencoders"
-(https://arxiv.org/abs/1611.02648)[v1] (version 1)
+(https://arxiv.org/abs/1611.02648) (version 1)
 By
 Nat Dilokthanakul, Pedro A.M. Mediano, Marta Garnelo, Matthew C.H. Lee, Hugh Salimbeni, Kai Arulkumaran, Murray Shanahan
 
@@ -19,7 +20,7 @@ Python packages:
 
 To run a spiral experiment,
 
-	./run.sh spiral 
+	./run.sh spiral
 
 To visualise spiral experiment (can be used while training)
 
@@ -29,7 +30,7 @@ To visualise spiral experiment (can be used while training)
 
 To turn off CV regularisation term (set alpha)
 
-set flag 
+set flag
 
 	./run.sh spiral -cvWeight 0.0
 
@@ -41,7 +42,7 @@ To run MNIST
 
 	./run.sh mnist
 
-To use GPU 
+To use GPU
 
 set flag
 
@@ -61,12 +62,10 @@ During optimisation, the GMVAE objectives (5 contributing terms) are calculated 
 
 # Acknowledgements
 
-I would like to thanks the following, whose github's repos were used as inital templates for implementing this idea. 
+I would like to thanks the following, whose github's repos were used as inital templates for implementing this idea.
 
 1. Rui Shu https://github.com/RuiShu/cvae
 
 2. Joost van Amersfoort https://github.com/y0ast/VAE-Torch
 
 3. Kai Arulkumaran https://github.com/Kaixhin/Autoencoders
-
-
