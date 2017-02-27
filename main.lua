@@ -179,72 +179,66 @@ local oneTensor
 
 function feval(params)
 
-	GMVAE:zeroGradParameters()
+  GMVAE:zeroGradParameters()
 
-	local qZ_no_mask, qX, qW, p_xz, y_recon, x_sample  = table.unpack( GMVAE:forward({y, n1, n2}) )
-
-	-- CALCULATE LOSS AND GRADIENT
- 	local y_replicated = MC_replicate:forward(y)
-
-	-- 1.) Reconstruction Cost = -E[logP(y|x)]
-	local reconLoss = ReconCriterion:forward(y_recon, y_replicated  ) * (1/opt.nMC)
-	local dRecon_dy = ReconCriterion:backward(y_recon, y_replicated )
-
-	if continuous == 1 then
-		dRecon_dy[1]:div(opt.nMC)
-		dRecon_dy[2]:div(opt.nMC)
-	else
-		dRecon_dy:div(opt.nMC)
-	end
+  local qZ, qX, qW, p_xz, y_recon = table.unpack( GMVAE:forward({y, n1, n2}) )
 
 
-	-- 2.) E_z_w[KL(q(x)|| p(x|z,w))]
-	local qZ = qZ_no_mask
-	local mean_x, logVar_x = table.unpack(qX)
-	local mean_k, logVar_k = table.unpack(p_xz)
-	local KL_out = ExpectedKLDivergence:forward({qZ, mean_x, logVar_x, mean_k, logVar_k})
-	local xLoss = KL_out:sum()
-	oneTensor = oneTensor or torch.Tensor():typeAs(KL_out):resizeAs(KL_out):fill(1)
-	local gradQz_no_mask, gradMean_x, gradLogVar_x, gradMean_k, gradLogVar_k =
-			table.unpack( ExpectedKLDivergence:backward({qZ, mean_x, logVar_x, mean_k, logVar_k}, oneTensor ) )
+
+  -- CALCULATE LOSS AND GRADIENT
+   local y_replicated = MC_replicate:forward(y)
+
+  -- 1.) Reconstruction Cost = -E[logP(y|x)]
+  local reconLoss = ReconCriterion:forward(y_recon, y_replicated  ) * (1/opt.nMC)
+  local dRecon_dy = ReconCriterion:backward(y_recon, y_replicated )
+  if continuous == 1 then
+    dRecon_dy[1]:div(opt.nMC)
+    dRecon_dy[2]:div(opt.nMC)
+  else
+    dRecon_dy:div(opt.nMC)
+  end
 
 
-	-- 3.) KL( q(w) || P(w) )
-	local mean_w, logVar_w = table.unpack(qW)
-	local wLoss = VAE_KLDCriterion:forward( mean_w, logVar_w)
-	local gradW	= VAE_KLDCriterion:backward( mean_w, logVar_w)
-
-	-- 4.) KL( q(z) || P(z) )  : P(z) can be shaped with known label
-	local zLoss = 0
-	zLoss = DiscreteKLDCriterion:forward(qZ_no_mask)
-	gradQz_no_mask:add( DiscreteKLDCriterion:backward(qZ_no_mask) )
-
-	-- 5.) we want to add regularizer based on consistency violation (CV):
-
-	local lh = Likelihood:forward({x_sample, mean_k, logVar_k})
-	local CV = EntropyCriterion:forward(lh)
-	local gradLh = EntropyCriterion:backward(lh)
-	local gradX, gradM_k, gradLv = table.unpack(Likelihood:backward({x_sample, mean_k, logVar_k}, gradLh))
-
-	for k =1, z_size do
-		gradMean_k[k]:add(gradM_k[k])
-		gradLogVar_k[k]:add(gradLv[k])
-	end
-
-	-- Put all the gradient of the cost into a table
-	local gradLoss = { gradQz_no_mask,
-					   { gradMean_x, gradLogVar_x},
-					   gradW,
-					   { gradMean_k, gradLogVar_k  },
-					   dRecon_dy,
-					   gradX
-					 }
+  local xLoss, oneTensor, gradQz, gradMean_x, gradLogVar_x, gradMean_k, gradLogVar_k
+  local gradQz, mean_k, logVar_k
 
 
-	GMVAE:backward({y, n1, n2}, gradLoss)
+  -- 2.) E_z_w[KL(q(x)|| p(x|z,w))]
+  local mean_x, logVar_x = table.unpack(qX)
+  mean_k, logVar_k = table.unpack(p_xz)
+  local KL_out = ExpectedKLDivergence:forward({qZ, mean_x, logVar_x, mean_k, logVar_k})
+  xLoss = KL_out:sum()
+  oneTensor = oneTensor or torch.Tensor():typeAs(KL_out):resizeAs(KL_out):fill(1)
+  gradQz, gradMean_x, gradLogVar_x, gradMean_k, gradLogVar_k =
+      table.unpack( ExpectedKLDivergence:backward({qZ, mean_x, logVar_x, mean_k, logVar_k}, oneTensor ) )
 
-	local loss = reconLoss + xLoss + wLoss + zLoss
-	return {loss,CV}, gradParams
+  -- 3.) KL( q(w) || P(w) )
+  local mean_w, logVar_w = table.unpack(qW)
+  local wLoss = VAE_KLDCriterion:forward( mean_w, logVar_w)
+  local gradW  = VAE_KLDCriterion:backward( mean_w, logVar_w)
+
+
+  -- 4.)  CV = H(Z|X, W) = E_q(x,w) [ E_p(z|x,w)[ - log P(z|x,w)] ]
+	-- new inference model = E[KL(P(z|x,w)||P(z))] = E[ E[logP(z|x,w)] - E[logP(z)] ] = - CV + constant
+  local CV = EntropyCriterion:forward(qZ)
+  gradQz:add(EntropyCriterion:backward(qZ) ):mul(-1)
+	local constant = - torch.log(1.0/z_size)
+
+
+  -- Put all the gradient of the cost into a table
+  local gradLoss = { gradQz,
+             { gradMean_x, gradLogVar_x},
+             gradW,
+             { gradMean_k, gradLogVar_k  },
+             dRecon_dy
+           }
+  -- Backprop all the gradient together
+  GMVAE:backward({y, n1, n2}, gradLoss)
+
+
+
+  local loss = reconLoss + xLoss + wLoss - CV + constant
+  return {loss, CV}, gradParams
 end
 
 
