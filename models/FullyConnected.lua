@@ -1,5 +1,6 @@
-local Model = {}
 
+
+local Model = {}
 
 function Model:CreateRecogniser(input_size, hidden_size, x_size, w_size, number_of_mixtures)
 	local input = - nn.Identity()
@@ -11,10 +12,11 @@ function Model:CreateRecogniser(input_size, hidden_size, x_size, w_size, number_
 					- nn.BatchNormalization(hidden_size)
 					- nn.ReLU(true)
 
+	--[[
 	local q_z = hidden
 				- nn.Linear(hidden_size, number_of_mixtures)
 				- nn.SoftMax()
-
+	]]--
 
 	local mean_x = hidden
 				- nn.Linear(hidden_size, x_size)
@@ -28,7 +30,7 @@ function Model:CreateRecogniser(input_size, hidden_size, x_size, w_size, number_
 	local q_x = {mean_x, logVar_x} - nn.Identity()
 	local q_w = {mean_w, logVar_w} - nn.Identity()
 
-	return nn.gModule({input}, {q_z, q_x, q_w})
+	return nn.gModule({input}, {q_x, q_w})
 end
 
 function Model:CreateYGenerator(input_size, hidden_size, output_size, continous)

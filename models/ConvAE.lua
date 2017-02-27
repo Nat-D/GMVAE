@@ -1,3 +1,5 @@
+
+
 local Model = {
   nFilters = 16
 }
@@ -8,7 +10,6 @@ owidth  = floor((width  + 2*padW - kW) / dW + 1)
 oheight = floor((height + 2*padH - kH) / dH + 1)
 ]]--
 
---require 'Probe'
 function Model:CreateRecogniser(input_size, hidden_size, x_size, w_size, number_of_mixtures)
   local height = input_size[1] -- 28x28 for mnist
   local width = input_size[2]
@@ -32,11 +33,11 @@ function Model:CreateRecogniser(input_size, hidden_size, x_size, w_size, number_
           - nn.ReLU(true)
           --out: hidden x 1 x 1
           - nn.View(-1, hidden_size)
-
+  --[[
 	local q_z = hidden
 				- nn.Linear(hidden_size, number_of_mixtures)
 				- nn.SoftMax()
-
+        ]]--
 
 	local mean_x = hidden
 				- nn.Linear(hidden_size, x_size)
@@ -50,7 +51,8 @@ function Model:CreateRecogniser(input_size, hidden_size, x_size, w_size, number_
 	local q_x = {mean_x, logVar_x} - nn.Identity()
 	local q_w = {mean_w, logVar_w} - nn.Identity()
 
-	return nn.gModule({input}, {q_z, q_x, q_w})
+	--return nn.gModule({input}, {q_z, q_x, q_w})
+  return nn.gModule({input}, {q_x, q_w})
 end
 
 --[[

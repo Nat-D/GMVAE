@@ -11,7 +11,7 @@ ax = fig.add_subplot(111)
 np.random.seed(11)
 mean = torchfile.load('../save/m.t7')
 colors = {}
-for j in xrange(len(mean)):
+for j in range(len(mean)):
     colors[j] = np.random.rand(3,1)
 
 
@@ -33,7 +33,7 @@ while plotting:
         order = vals.argsort()[::-1]
         return vals[order], vecs[:,order]
 
-    for i in xrange(len(cov)):
+    for i in range(len(cov)):
         vals, vecs = eigsorted(cov[i])
         theta = np.degrees(np.arctan2(*vecs[:,0][::-1]))
         # Width and height are "full" widths, not radius

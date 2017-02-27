@@ -128,14 +128,16 @@ local input = - nn.Identity()
 local noise1 = - nn.Identity()
 local noise2 = - nn.Identity()
 local zxw = input - zxw_recogniser
-local q_z = zxw - nn.SelectTable(1)
-local q_x = zxw - nn.SelectTable(2)
-local q_w = zxw - nn.SelectTable(3)
+local q_x = zxw - nn.SelectTable(1)
+local q_w = zxw - nn.SelectTable(2)
 local x_sample = {q_x, noise1} - GaussianSampler(opt.nMC, x_size)
 local w_sample = {q_w, noise2} - GaussianSampler(opt.nMC, w_size)
 local y_recon  = x_sample - y_generator
 local p_xz  = w_sample - prior_generator
-local GMVAE = nn.gModule({input, noise1, noise2},{q_z, q_x, q_w, p_xz, y_recon, x_sample})
+local mean_k = p_xz - nn.SelectTable(1)
+local logVar_k = p_xz - nn.SelectTable(2)
+local p_z = {x_sample, mean_k, logVar_k} - Likelihood(z_size, x_size, opt.nMC)
+local GMVAE = nn.gModule({input, noise1, noise2},{p_z, q_x, q_w, p_xz, y_recon})
 
 -- Additional layers to facilitate more than one monte-carlo sample
 local MC_replicate = nn.Replicate(opt.nMC)
@@ -193,73 +195,66 @@ local params, gradParams = GMVAE:getParameters()
 
 function feval(params)
 
-	GMVAE:zeroGradParameters()
+  GMVAE:zeroGradParameters()
 
-	local qZ, qX, qW, p_xz, y_recon, x_sample  = table.unpack( GMVAE:forward({y, n1, n2}) )
-
-
-
-	-- CALCULATE LOSS AND GRADIENT
- 	local y_replicated = MC_replicate:forward(y)
-
-	-- 1.) Reconstruction Cost = -E[logP(y|x)]
-	local reconLoss = ReconCriterion:forward(y_recon, y_replicated  ) * (1/opt.nMC)
-	local dRecon_dy = ReconCriterion:backward(y_recon, y_replicated )
-	if continuous == 1 then
-		dRecon_dy[1]:div(opt.nMC)
-		dRecon_dy[2]:div(opt.nMC)
-	else
-		dRecon_dy:div(opt.nMC)
-	end
+  local qZ, qX, qW, p_xz, y_recon = table.unpack( GMVAE:forward({y, n1, n2}) )
 
 
-	local xLoss, oneTensor, gradQz, gradMean_x, gradLogVar_x, gradMean_k, gradLogVar_k
-	local gradQz, mean_k, logVar_k
 
-	-- 2.) E_z_w[KL(q(x)|| p(x|z,w))]
-	local mean_x, logVar_x = table.unpack(qX)
-	mean_k, logVar_k = table.unpack(p_xz)
-	local KL_out = ExpectedKLDivergence:forward({qZ, mean_x, logVar_x, mean_k, logVar_k})
-	xLoss = KL_out:sum()
-	oneTensor = oneTensor or torch.Tensor():typeAs(KL_out):resizeAs(KL_out):fill(1)
-	gradQz, gradMean_x, gradLogVar_x, gradMean_k, gradLogVar_k =
-			table.unpack( ExpectedKLDivergence:backward({qZ, mean_x, logVar_x, mean_k, logVar_k}, oneTensor ) )
+  -- CALCULATE LOSS AND GRADIENT
+   local y_replicated = MC_replicate:forward(y)
 
-
-	-- 3.) KL( q(w) || P(w) )
-	local mean_w, logVar_w = table.unpack(qW)
-	local wLoss = VAE_KLDCriterion:forward( mean_w, logVar_w)
-	local gradW	= VAE_KLDCriterion:backward( mean_w, logVar_w)
-
-	-- 4.) KL( q(z) || P(z) ) 
-	local zLoss = DiscreteKLDCriterion:forward(qZ)
-	gradQz:add( DiscreteKLDCriterion:backward(qZ) )
+  -- 1.) Reconstruction Cost = -E[logP(y|x)]
+  local reconLoss = ReconCriterion:forward(y_recon, y_replicated  ) * (1/opt.nMC)
+  local dRecon_dy = ReconCriterion:backward(y_recon, y_replicated )
+  if continuous == 1 then
+    dRecon_dy[1]:div(opt.nMC)
+    dRecon_dy[2]:div(opt.nMC)
+  else
+    dRecon_dy:div(opt.nMC)
+  end
 
 
-	-- 5.)  CV = H(Z|X, W) = E_q(x,w) [ E_p(z|x,w)[ - log P(z|x,w)] ]
-	local lh = Likelihood:forward({x_sample, mean_k, logVar_k})
-	local CV = EntropyCriterion:forward(lh)
-	local gradLh = EntropyCriterion:backward(lh)
-	local gradX, gradM_k, gradLv = table.unpack(Likelihood:backward({x_sample, mean_k, logVar_k}, gradLh))
-	for k =1, z_size do
-		gradMean_k[k]:add(gradM_k[k])
-		gradLogVar_k[k]:add(gradLv[k])
-	end
+  local xLoss, oneTensor, gradQz, gradMean_x, gradLogVar_x, gradMean_k, gradLogVar_k
+  local gradQz, mean_k, logVar_k
 
-	-- Put all the gradient of the cost into a table
-	local gradLoss = { gradQz,
-					   { gradMean_x, gradLogVar_x},
-					   gradW,
-					   { gradMean_k, gradLogVar_k  },
-					   dRecon_dy,
-					   gradX
-					 }
 
-	-- Backprop all the gradient together
-	GMVAE:backward({y, n1, n2}, gradLoss)
+  -- 2.) E_z_w[KL(q(x)|| p(x|z,w))]
+  local mean_x, logVar_x = table.unpack(qX)
+  mean_k, logVar_k = table.unpack(p_xz)
+  local KL_out = ExpectedKLDivergence:forward({qZ, mean_x, logVar_x, mean_k, logVar_k})
+  xLoss = KL_out:sum()
+  oneTensor = oneTensor or torch.Tensor():typeAs(KL_out):resizeAs(KL_out):fill(1)
+  gradQz, gradMean_x, gradLogVar_x, gradMean_k, gradLogVar_k =
+      table.unpack( ExpectedKLDivergence:backward({qZ, mean_x, logVar_x, mean_k, logVar_k}, oneTensor ) )
 
-	local loss = reconLoss + xLoss + wLoss + zLoss
-	return {loss, CV}, gradParams
+  -- 3.) KL( q(w) || P(w) )
+  local mean_w, logVar_w = table.unpack(qW)
+  local wLoss = VAE_KLDCriterion:forward( mean_w, logVar_w)
+  local gradW  = VAE_KLDCriterion:backward( mean_w, logVar_w)
+
+
+  -- 4.)  CV = H(Z|X, W) = E_q(x,w) [ E_p(z|x,w)[ - log P(z|x,w)] ]
+	-- new inference model = E[KL(P(z|x,w)||P(z))] = E[ E[logP(z|x,w)] - E[logP(z)] ] = - CV + constant
+  local CV = EntropyCriterion:forward(qZ)
+  gradQz:add(EntropyCriterion:backward(qZ) ):mul(-1)
+	local constant = - torch.log(1.0/z_size)
+
+
+  -- Put all the gradient of the cost into a table
+  local gradLoss = { gradQz,
+             { gradMean_x, gradLogVar_x},
+             gradW,
+             { gradMean_k, gradLogVar_k  },
+             dRecon_dy
+           }
+  -- Backprop all the gradient together
+  GMVAE:backward({y, n1, n2}, gradLoss)
+
+
+
+  local loss = reconLoss + xLoss + wLoss - CV + constant
+  return {loss, CV}, gradParams
 end
 
 
@@ -314,15 +309,16 @@ for epoch = 1, max_epoch do
 
 		if visualise2D == 1 then
 			recon[{ { batch_size*(t-1) + 1, batch_size*t },{}}]    = y_generator.output[1]:view(-1,batch_size,y_size)[1]:float()
-			latent[{ { batch_size*(t-1) + 1, batch_size*t },{}}] = zxw_recogniser.output[2][1]:float()
-			w_latent[{ { batch_size*(t-1) + 1, batch_size*t },{}}] = zxw_recogniser.output[3][1]:float()
-			__, labels[{{ batch_size*(t-1) + 1, batch_size*t }}]   = zxw_recogniser.output[1]:max(2)
+			latent[{ { batch_size*(t-1) + 1, batch_size*t },{}}] = zxw_recogniser.output[1][1]:float()
+			w_latent[{ { batch_size*(t-1) + 1, batch_size*t },{}}] = zxw_recogniser.output[2][1]:float()
+			local __, label_holder = GMVAE.output[1]:max(2)
+			labels[{{ batch_size*(t-1) + 1, batch_size*t }}]   = label_holder[{{1,batch_size}}]
 		end
 
 
 		if reportACC == 1 then
 			-- Collect report label
-		  labels[{{ batch_size*(t-1) + 1, batch_size*t },{}}] = zxw_recogniser.output[1]:float()
+		   labels[{{ batch_size*(t-1) + 1, batch_size*t },{}}] = GMVAE.output[1]:float()[{{1,batch_size}}]
 		end
 
 
@@ -363,37 +359,47 @@ for epoch = 1, max_epoch do
 
 
 	if reportACC == 1 then
-		local true_label_all = label_data:index(1, indices_all)
-		local training_score = AAE_Clustering_Criteria(labels, true_label_all) --ACC(labels, true_label_all)
-		print('Training ACC score: '.. training_score)
+    local true_label_all = label_data:index(1, indices_all)
+    local training_score = AAE_Clustering_Criteria(labels, true_label_all) --ACC(labels, true_label_all)
+    print('Training ACC score: '.. training_score)
 
-		GMVAE:evaluate()
-		-- split batchSize for cudnn --
-		local N_test = test_data:size(1)
-		test_data_set = test_data:split(1000)
-		local predict_label_cpu = torch.Tensor():resize(N_test,z_size)
+    GMVAE:evaluate()
+    -- split batchSize for cudnn --
+    -- cudnn doesn't support large batchsize --
+    local N_test = test_data:size(1)
+    test_data_set = test_data:split(100)
+    local predict_label_cpu = torch.Tensor():resize(N_test,z_size)
 
-		for t,data  in ipairs(test_data_set) do
-			local predict_label =  zxw_recogniser:forward(data)[1]
-			predict_label_cpu[{{ 1000*(t-1) + 1, 1000*t },{}}] = predict_label:float()
-		end
-		local testing_acc_score = AAE_Clustering_Criteria(predict_label_cpu, test_data_label)
-		-- Testing ACC score
-		print('Testing ACC score: '.. testing_acc_score)
+    local zero1 = torch.zeros(opt.nMC, 100, x_size)
+    local zero2 = torch.zeros(opt.nMC, 100, w_size)
 
-		ACC_evaluation[epoch] = testing_acc_score
-		Train_ACC_evaluation[epoch] = training_score
-		torch.save(paths.concat('experiments', opt._id, 'acc_score.t7'), ACC_evaluation)
-		torch.save(paths.concat('experiments', opt._id, 'train_ACC_score.t7'), Train_ACC_evaluation)
-		gnuplot.pngfigure(paths.concat('experiments', opt._id, 'Scores.png'))
-		gnuplot.plot({'Unsupervised Clustering ACC', torch.linspace(1,epoch,epoch), ACC_evaluation[{{1,epoch}}] ,'-'},
-					 {'Training ACC', torch.linspace(1,epoch,epoch), Train_ACC_evaluation[{{1,epoch}}], '-' }
-					 )
-		gnuplot.xlabel('Epoch')
-		gnuplot.ylabel('Scores')
-		gnuplot.plotflush()
+    if cuda == 1 then
+      zero1 = zero1:cuda()
+      zero2 = zero2:cuda()
+    end
 
-	end
+    for t,test_data  in ipairs(test_data_set) do
+      --print(data:size())
+      local predict_label =  GMVAE:forward({test_data, zero1, zero2})[1][{{1,100}}]
+      predict_label_cpu[{{ 100*(t-1) + 1, 100*t },{}}] = predict_label:float()
+    end
+    local testing_acc_score = AAE_Clustering_Criteria(predict_label_cpu, test_data_label)
+    -- Testing ACC score
+    print('Testing ACC score: '.. testing_acc_score)
+
+    ACC_evaluation[epoch] = testing_acc_score
+    Train_ACC_evaluation[epoch] = training_score
+    torch.save(paths.concat('experiments', opt._id, 'acc_score.t7'), ACC_evaluation)
+    torch.save(paths.concat('experiments', opt._id, 'train_ACC_score.t7'), Train_ACC_evaluation)
+    gnuplot.pngfigure(paths.concat('experiments', opt._id, 'Scores.png'))
+    gnuplot.plot({'Unsupervised Clustering ACC', torch.linspace(1,epoch,epoch), ACC_evaluation[{{1,epoch}}] ,'-'},
+           {'Training ACC', torch.linspace(1,epoch,epoch), Train_ACC_evaluation[{{1,epoch}}], '-' }
+           )
+    gnuplot.xlabel('Epoch')
+    gnuplot.ylabel('Scores')
+    gnuplot.plotflush()
+
+  end
 
 
 	if visualise2D == 1 then

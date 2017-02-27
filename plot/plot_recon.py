@@ -37,7 +37,7 @@ while plotting:
         order = vals.argsort()[::-1]
         return vals[order], vecs[:,order]
 
-    for i in xrange(len(cov)):
+    for i in range(len(cov)):
         vals, vecs = eigsorted(cov[i])
 
         # plots latents samples

@@ -1,8 +1,16 @@
+
+
 local GaussianLogLikelihood, parent = torch.class('nn.GaussianLogLikelihood', 'nn.Module')
 
 function GaussianLogLikelihood:__init(name,display)
   parent.__init(self)
   self.gradInput = {}
+end
+
+function GaussianLogLikelihood:evaluate()
+  self._x = nil
+  self._var = nil
+  self.output = nil
 end
 
 function GaussianLogLikelihood:updateOutput(input)
