@@ -20,12 +20,13 @@ end
 
 
 -- TEST PASS
-function KLDivergence(D, M)
+function KLDivergence(N, D, M)
     -- KL  = 1/2(  logvar2 - logvar1 + (var1 + (m1-m2)^2)/var2  - 1 )
     local mean1_in = - nn.Identity()
     local logVar1_in = - nn.Identity()
     local mean2_in = - nn.Identity() -- [(MxN)xD]
     local logVar2_in = - nn.Identity() -- [(MxN)xD]
+    local q_zk = - nn.Identity()
 
     local mean1 = mean1_in - nn.Replicate(M)
     local logVar1 = logVar1_in - nn.Replicate(M)
@@ -40,50 +41,61 @@ function KLDivergence(D, M)
     local dm2_v1 = {dm2, var1} - nn.CAddTable()
     local dm2_v1_v2 = {dm2_v1, var2} - nn.CDivTable() - nn.AddConstant(-1)
     local total = {dm2_v1_v2, logVar2} - nn.CAddTable()
-    local totals = {total, logVar1}
+    local totals1 = {total, logVar1}
                     - nn.CSubTable()
-                    - nn.MulConstant(0.5) -- [MxNxD]
+                    - nn.MulConstant(0.5) -- [MxNxD] 
+                    - nn.View(M*N, D)
+
+    local q_zk_mat = q_zk - nn.Replicate(D) 
+                        - nn.Reshape(M*N, D) 
+                        - nn.Transpose({1,2})
+
+    local totals = {q_zk_mat, totals1} - nn.CMulTable() - nn.View(M,N,D)
                     - nn.Sum(1)
                     - nn.MulConstant(1/M)
                     - nn.View(-1, D, 1)
 
-    return nn.gModule({mean1_in, logVar1_in, mean2_in, logVar2_in}, {totals})
+    return nn.gModule({mean1_in, logVar1_in, mean2_in, logVar2_in, q_zk}, {totals})
 
 end
 
-function KL_Table(K, D, M)
+function KL_Table(N, K, D, M)
     local KL_table = nn.ConcatTable()
     for k=1, K do
         local mean   = - nn.Identity() -- [NxD]
         local logVar = - nn.Identity() -- [NxD]
         local mean_Mixture = - nn.Identity() -- {[NxD]}k
         local logVar_Mixture = - nn.Identity() -- {[NxD]}k
-
+        local q_z = -nn.Identity()
         local meanK = mean_Mixture - nn.SelectTable(k)
         local logVarK = logVar_Mixture - nn.SelectTable(k)
-        local KL = {mean, logVar, meanK, logVarK} - KLDivergence(D, M)
-        local KL_module = nn.gModule({mean, logVar, mean_Mixture, logVar_Mixture}, {KL})
+        local q_zk = q_z - nn.Select(2,k)
+        local KL = {mean, logVar, meanK, logVarK, q_zk } - KLDivergence(N, D, M)
+        local KL_module = nn.gModule({mean, logVar, mean_Mixture, logVar_Mixture, q_z}, {KL})
         KL_table:add(KL_module)
     end
 
     return KL_table
 end
 
-function ExpectedKLDivergence(K, D, M)
+function ExpectedKLDivergence(N, K, D, M)
 
-    local q_z    = - nn.Identity() -- [NxK]
+    local q_z    = - nn.Identity() -- [(MxN)xK]
     local mean   = - nn.Identity() -- [NxD]
     local logVar = - nn.Identity() -- [NxD]
-    local mean_Mixture = - nn.Identity() -- {[NxD]}k
-    local logVar_Mixture = - nn.Identity() -- {[NxD]}k
+    local mean_Mixture = - nn.Identity() -- {[(MxN)xD]}k
+    local logVar_Mixture = - nn.Identity() -- {[(MxN)xD]}k
 
-    local KL_List = {mean, logVar, mean_Mixture, logVar_Mixture}
-                - KL_Table(K, D, M)  -- {[NxDx1]}k
+    local KL_List = {mean, logVar, mean_Mixture, logVar_Mixture, q_z}
+                - KL_Table(N, K, D, M)  -- {[NxDx1]}k
                 - nn.JoinTable(3) -- [NxDxK]
 
-    local weighted_KL = {KL_List, q_z}
-                    - nn.MV()  -- [NxDxK]x[NxK] = [NxD]
-    return  nn.gModule({q_z, mean,logVar, mean_Mixture, logVar_Mixture},{weighted_KL})
+    --local weighted_KL = {KL_List, q_z_avg }
+                    --- nn.MV()  -- [NxDxK]x[NxK] = [NxD]
+                    --
+    local weighted_KL = KL_List - nn.Sum(3)
+
+    return  nn.gModule({q_z, mean, logVar, mean_Mixture, logVar_Mixture},{weighted_KL})
 end
 
 
