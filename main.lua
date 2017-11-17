@@ -160,7 +160,7 @@ else
 	ReconCriterion.sizeAverage = false
 end
 
-local ExpectedKLDivergence = ExpectedKLDivergence(z_size, x_size, opt.nMC)
+local ExpectedKLDivergence = ExpectedKLDivergence(batch_size ,z_size, x_size, opt.nMC)
 local VAE_KLDCriterion = nn.VAE_KLDCriterion()
 local DiscreteKLDCriterion = nn.DiscreteKLDCriterion(zPriorWeight)
 local EntropyCriterion = nn.EntropyCriterion(opt.cvWeight, opt.nMC)
@@ -201,9 +201,9 @@ function feval(params)
   local qZ, qX, qW, p_xz, y_recon = table.unpack( GMVAE:forward({y, n1, n2}) )
 
 
-
   -- CALCULATE LOSS AND GRADIENT
    local y_replicated = MC_replicate:forward(y)
+
 
   -- 1.) Reconstruction Cost = -E[logP(y|x)]
   local reconLoss = ReconCriterion:forward(y_recon, y_replicated  ) * (1/opt.nMC)
@@ -223,6 +223,7 @@ function feval(params)
   -- 2.) E_z_w[KL(q(x)|| p(x|z,w))]
   local mean_x, logVar_x = table.unpack(qX)
   mean_k, logVar_k = table.unpack(p_xz)
+
   local KL_out = ExpectedKLDivergence:forward({qZ, mean_x, logVar_x, mean_k, logVar_k})
   xLoss = KL_out:sum()
   oneTensor = oneTensor or torch.Tensor():typeAs(KL_out):resizeAs(KL_out):fill(1)
@@ -242,8 +243,6 @@ function feval(params)
 	if zLoss/batch_size > opt.lambda then
 		gradQz:add(EntropyCriterion:backward(qZ) ):mul(-1)
 	end
-
-
 
 
   -- Put all the gradient of the cost into a table
