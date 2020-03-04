@@ -1,5 +1,5 @@
 ## This branch is for version 1 of the paper. For updated version checkout branch version2 and svhn
-
+## See an extension of this work https://github.com/51616/split-vae
 
 # Code for "Deep Unsupervised Clustering with Gaussian Mixture Variational Autoencoders"
 (https://arxiv.org/abs/1611.02648) (version 1)
